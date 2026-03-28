@@ -2,7 +2,7 @@
 //! DoS-resistant hashing algorithm designed for computational uses such as
 //! hashmaps, bloom filters, count sketching, etc.
 //!
-//! When should you **not** use foldhash:
+//! When should you **not** use foldhash_portable:
 //!
 //! - You are afraid of people studying your long-running program's behavior
 //!   to reverse engineer its internal random state and using this knowledge to
@@ -31,7 +31,7 @@
 //! work out-of-the-box:
 //!
 //! ```rust
-//! use foldhash::{HashMap, HashMapExt};
+//! use foldhash_portable::{HashMap, HashMapExt};
 //!
 //! let mut hm = HashMap::new();
 //! hm.insert(42, "hello");
@@ -43,13 +43,13 @@
 //!
 //! ```rust
 //! use hashbrown::HashMap;
-//! use foldhash::fast::RandomState;
+//! use foldhash_portable::fast::RandomState;
 //!
 //! let mut hm = HashMap::with_hasher(RandomState::default());
 //! hm.insert("foo", "bar");
 //! ```
 //!
-//! The above methods are the recommended way to use foldhash, which will
+//! The above methods are the recommended way to use foldhash_portable, which will
 //! automatically generate a randomly generated hasher instance for you. If you
 //! absolutely must have determinism you can use [`FixedState`](fast::FixedState)
 //! instead, but note that this makes you trivially vulnerable to HashDoS
@@ -58,7 +58,7 @@
 //!
 //! ```rust
 //! use std::collections::HashSet;
-//! use foldhash::fast::FixedState;
+//! use foldhash_portable::fast::FixedState;
 //!
 //! let mut hm = HashSet::with_hasher(FixedState::with_seed(42));
 //! hm.insert([1, 10, 100]);
@@ -76,7 +76,7 @@
 //! [`BuildHasher`](std::hash::BuildHasher) trait:
 //! ```rust
 //! use std::hash::BuildHasher;
-//! use foldhash::quality::RandomState;
+//! use foldhash_portable::quality::RandomState;
 //!
 //! let random_state = RandomState::default();
 //! let hash = random_state.hash_one("hello world");
@@ -110,6 +110,11 @@
 //! [`hasher_prefixfree_extras`](https://github.com/rust-lang/rust/issues/96762),
 //! - `std`, this enabled-by-default feature offers convenient aliases for `std`
 //! containers, but can be turned off for `#![no_std]` crates.
+//! - `portable`, this feature ensures hash output is identical across all
+//! platforms (endianness, 32-bit vs 64-bit) for the same input. This comes
+//! at a slight performance cost on big-endian and 32-bit platforms. Note that
+//! `write_usize` hashes are still inherently platform-dependent since `usize`
+//! has different widths on different platforms.
 
 #![cfg_attr(all(not(test), not(feature = "std")), no_std)]
 #![cfg_attr(feature = "nightly", feature(hasher_prefixfree_extras))]
@@ -150,6 +155,7 @@ const fn folded_multiply(x: u64, y: u64) -> u64 {
     // 64-bit to 128-bit widening multiplication with the `wide-arithmetic`
     // proposal.
     #[cfg(any(
+        feature = "portable",
         all(
             target_pointer_width = "64",
             not(any(target_arch = "sparc64", target_arch = "wasm64")),
@@ -173,6 +179,7 @@ const fn folded_multiply(x: u64, y: u64) -> u64 {
     }
 
     #[cfg(not(any(
+        feature = "portable",
         all(
             target_pointer_width = "64",
             not(any(target_arch = "sparc64", target_arch = "wasm64")),
@@ -208,6 +215,7 @@ const fn folded_multiply(x: u64, y: u64) -> u64 {
 #[inline(always)]
 const fn rotate_right(x: u64, r: u32) -> u64 {
     #[cfg(any(
+        feature = "portable",
         target_pointer_width = "64",
         target_arch = "aarch64",
         target_arch = "x86_64",
@@ -218,6 +226,7 @@ const fn rotate_right(x: u64, r: u32) -> u64 {
     }
 
     #[cfg(not(any(
+        feature = "portable",
         target_pointer_width = "64",
         target_arch = "aarch64",
         target_arch = "x86_64",
@@ -235,6 +244,22 @@ const fn rotate_right(x: u64, r: u32) -> u64 {
 #[cold]
 fn cold_path() {}
 
+#[inline(always)]
+fn read_u32(bytes: &[u8; 4]) -> u32 {
+    #[cfg(feature = "portable")]
+    { u32::from_le_bytes(*bytes) }
+    #[cfg(not(feature = "portable"))]
+    { u32::from_ne_bytes(*bytes) }
+}
+
+#[inline(always)]
+fn read_u64(bytes: &[u8; 8]) -> u64 {
+    #[cfg(feature = "portable")]
+    { u64::from_le_bytes(*bytes) }
+    #[cfg(not(feature = "portable"))]
+    { u64::from_ne_bytes(*bytes) }
+}
+
 /// Hashes strings <= 16 bytes, has unspecified behavior when bytes.len() > 16.
 #[inline(always)]
 fn hash_bytes_short(bytes: &[u8], accumulator: u64, seeds: &[u64; 6]) -> u64 {
@@ -243,11 +268,11 @@ fn hash_bytes_short(bytes: &[u8], accumulator: u64, seeds: &[u64; 6]) -> u64 {
     let mut s1 = seeds[1];
     // XOR the input into s0, s1, then multiply and fold.
     if len >= 8 {
-        s0 ^= u64::from_ne_bytes(bytes[0..8].try_into().unwrap());
-        s1 ^= u64::from_ne_bytes(bytes[len - 8..].try_into().unwrap());
+        s0 ^= read_u64(bytes[0..8].try_into().unwrap());
+        s1 ^= read_u64(bytes[len - 8..len].try_into().unwrap());
     } else if len >= 4 {
-        s0 ^= u32::from_ne_bytes(bytes[0..4].try_into().unwrap()) as u64;
-        s1 ^= u32::from_ne_bytes(bytes[len - 4..].try_into().unwrap()) as u64;
+        s0 ^= read_u32(bytes[0..4].try_into().unwrap()) as u64;
+        s1 ^= read_u32(bytes[len - 4..len].try_into().unwrap()) as u64;
     } else if len > 0 {
         let lo = bytes[0];
         let mid = bytes[len / 2];
@@ -267,7 +292,11 @@ unsafe fn load(bytes: &[u8], offset: usize) -> u64 {
     // In most (but not all) cases this unsafe code is not necessary to avoid
     // the bounds checks in the below code, but the register allocation became
     // worse if I replaced those calls which could be replaced with safe code.
-    unsafe { bytes.as_ptr().add(offset).cast::<u64>().read_unaligned() }
+    let val = unsafe { bytes.as_ptr().add(offset).cast::<u64>().read_unaligned() };
+    #[cfg(feature = "portable")]
+    { val.to_le() }
+    #[cfg(not(feature = "portable"))]
+    { val }
 }
 
 /// Hashes strings > 16 bytes.

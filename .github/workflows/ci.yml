@@ -1,0 +1,44 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Reference platform (64-bit LE)
+          - target: x86_64-unknown-linux-gnu
+            use_cross: false
+          # 32-bit LE — exercises portable folded_multiply/rotate_right
+          - target: i686-unknown-linux-gnu
+            use_cross: true
+          # 64-bit LE ARM — common production target
+          - target: aarch64-unknown-linux-gnu
+            use_cross: true
+          # 64-bit BE — exercises portable endian byte loading
+          - target: s390x-unknown-linux-gnu
+            use_cross: true
+          # 32-bit BE — exercises all portable fixes simultaneously
+          - target: powerpc-unknown-linux-gnu
+            use_cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Test (default features)
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross test --target ${{ matrix.target }}
+          else
+            cargo test
+          fi
+      - name: Test (portable feature)
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross test --features portable --target ${{ matrix.target }}
+          else
+            cargo test --features portable
+          fi

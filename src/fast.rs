@@ -97,10 +97,15 @@ impl<'a> Hasher for FoldHasher<'a> {
     #[inline(always)]
     fn write_usize(&mut self, i: usize) {
         // u128 doesn't implement From<usize>.
-        #[cfg(target_pointer_width = "32")]
-        self.write_num(i as u32);
-        #[cfg(target_pointer_width = "64")]
+        #[cfg(feature = "portable")]
         self.write_num(i as u64);
+        #[cfg(not(feature = "portable"))]
+        {
+            #[cfg(target_pointer_width = "32")]
+            self.write_num(i as u32);
+            #[cfg(target_pointer_width = "64")]
+            self.write_num(i as u64);
+        }
     }
 
     #[cfg(feature = "nightly")]

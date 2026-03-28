@@ -1,5 +1,18 @@
-# Foldhash
-  
+# Foldhash-Portable
+
+Fork of [foldhash](https://github.com/orlp/foldhash) with an additional `portable`
+feature that ensures identical hash output across all platforms (endianness, 32-bit
+vs 64-bit). See the `portable` feature below for details.
+
+**Caveat:** The `portable` feature only makes the *hasher* cross-platform. Rust's
+`std::Hash` trait itself is not portable — `#[derive(Hash)]`, `write_usize`,
+and hashing of `str`/tuples may vary across platforms and compiler versions. For
+truly portable hashing you must also ensure stable `Hash` implementations on the
+caller side. See [portable-hash](https://github.com/hoxxep/portable-hash#whats-wrong-with-the-stdhash-traits)
+for a full explanation of the pitfalls.
+
+---
+
 This repository contains foldhash, a fast, non-cryptographic, minimally
 DoS-resistant hashing algorithm implemented in Rust designed for computational
 uses such as hash maps, bloom filters, count sketching, etc.
@@ -13,7 +26,9 @@ When should you **not** use foldhash:
 
 - You expect foldhash to have a consistent output across versions or
   platforms, such as for persistent file formats or communication protocols.
-  
+  (The `portable` feature provides cross-platform consistency but not
+  cross-version stability.)
+
 - You are relying on foldhash's properties for any kind of security.
   Foldhash is **not appropriate for any cryptographic purpose**.
 

@@ -1,13 +1,13 @@
 [package]
-name = "foldhash"
+name = "foldhash-portable"
 version = "0.2.0"
 authors = ["Orson Peters <orsonpeters@gmail.com>"]
 license = "Zlib"
-repository = "https://github.com/orlp/foldhash"
+repository = "https://github.com/arthurprs/foldhash-portable"
 readme = "README.md"
-keywords = ["hash", "hasher", "no-std"]
+keywords = ["hash", "hasher", "no-std", "portable"]
 categories = ["algorithms", "no-std"]
-description = "A fast, non-cryptographic, minimally DoS-resistant hashing algorithm."
+description = "A fast, non-cryptographic, minimally DoS-resistant hashing algorithm. Fork of foldhash with cross-platform hash stability."
 edition = "2021"
 exclude = ["benches", "tools", "assets"]
 rust-version = "1.60"
@@ -16,6 +16,7 @@ rust-version = "1.60"
 default = ["std"]
 std = []
 nightly = []
+portable = []
 
 [dependencies]
 
@@ -27,6 +28,7 @@ rand = "0.8"
 ahash = "0.8"
 fxhash = "0.2"
 rapidhash = "3.1.0"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
 chrono = "0.4"
 
 [lib]
